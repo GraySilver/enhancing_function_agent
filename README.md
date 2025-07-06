@@ -6,11 +6,14 @@
 
 ### Description
 一个有用的Agent策略，参考了一部分关于[EASYTOOL: Enhancing LLM-based Agents with Concise Tool Instruction](https://arxiv.org/pdf/2401.06201)逻辑，代码实现基于微软提供的[EASYTOOL](https://github.com/microsoft/JARVIS/tree/main/easytool)。
+![](https://github.com/GraySilver/enhancing_function_agent/blob/main/_assets/1.jpg)
 
 使用前：
+![](https://github.com/GraySilver/enhancing_function_agent/blob/main/_assets/use_before.jpg)
+
 
 使用后：
-
+![](https://github.com/GraySilver/enhancing_function_agent/blob/main/_assets/use_after.jpg)
 
 
 ### Features:
