@@ -1,7 +1,7 @@
 ## Enhancing FunctionCalling Agent
 
-- **Author:** allenyzx
-- **Version:** 0.0.1
+- **Author:** GraySilver
+- **Version:** 0.0.2
 - **Type:** agent-strategy
 
 ### Description
