@@ -50,8 +50,17 @@ parameters:
       en_US: Maximum Iterations
       zh_Hans: 最大迭代次数
       pt_BR: Maximum Iterations
-    default: 3
+    default: 5
     max: 30
+    min: 1
+  - name: maximum_easytool_retries
+    type: number
+    required: true
+    label:
+      en_US: Maximum EASYTOOL Retries
+      zh_Hans: EASYTOOL重试次数
+    default: 3
+    max: 10
     min: 1
 extra:
   python:

@@ -37,6 +37,7 @@ class FunctionCallingParams(BaseModel):
     model: AgentModelConfig
     tools: list[ToolEntity] | None
     maximum_iterations: int = 3
+    maximum_easytool_retries: int = 3
 
 
 class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
@@ -51,30 +52,33 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
         return SystemPromptMessage(content=prompt)
 
     def planning(self):
-        agent = self.session.model.llm.invoke(
-            model_config=self.model_config,
-            prompt_messages=[SystemPromptMessage(content="You are a helpful assistant."),
-                             UserPromptMessage(content="""You need to decompose a complex user's question into some simple subtasks and let the model execute it step by step.\n
-        This is the user's question: %s \n
-        Please note that: \n
-        1. You should only decompose this complex user's question into some simple subtasks which can be executed easily by using a single tool.\n
-        2. Each simple subtask should be expressed into natural language.\n
-        3. Each subtask should contain the necessary information from the original question and should be complete, explicit and self-consistent.\n
-        4. You must ONLY output the ID of the tool you chose in a parsible JSON format. An example output looks like:\n
-        {{\"Tasks\": [\"Task 1\", \"Task 2\", ...]}}\n
-        Output:""" % self.query)],
-            stop=self.stop,
-            stream=False,
-        )
-        result = agent.message.content
-        result = eval(result.replace('`json', '').replace('`', ''))
-        tasks = result["Tasks"]
         task_ls = []
-        for t in range(len(tasks)):
-            task_ls.append({"task": tasks[t], "id": t + 1})
-        return task_ls
+        try:
+            agent = self.session.model.llm.invoke(
+                model_config=self.model_config,
+                prompt_messages=[SystemPromptMessage(content="You are a helpful assistant."),
+                                 UserPromptMessage(content="""You need to decompose a complex user's question into some simple subtasks and let the model execute it step by step.\n
+            This is the user's question: %s \n
+            Please note that: \n
+            1. You should only decompose this complex user's question into some simple subtasks which can be executed easily by using a single tool.\n
+            2. Each simple subtask should be expressed into natural language.\n
+            3. Each subtask should contain the necessary information from the original question and should be complete, explicit and self-consistent.\n
+            4. You must ONLY output the ID of the tool you chose in a parsible JSON format. An example output looks like:\n
+            {{\"Tasks\": [\"Task 1\", \"Task 2\", ...]}}\n
+            Output:""" % self.query)],
+                stop=self.stop,
+                stream=False,
+            )
+            result = agent.message.content
+            result = eval(result.replace('`json', '').replace('`', ''))
+            tasks = result["Tasks"]
+            for t in range(len(tasks)):
+                task_ls.append({"task": tasks[t], "id": t + 1})
+            return task_ls
+        except:
+            return task_ls
 
-    def task_topology(self, task_ls):
+    def task_topology(self, task_ls, retry_count=3):
         ind = 0
         while True:
             try:
@@ -116,12 +120,12 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                 return result
             except Exception as e:
                 print(f"task topology fails: {e}")
-                if ind > 5:
+                if ind > retry_count:
                     return -1
                 ind += 1
                 continue
 
-    def choose_tool(self, question, tool_dic, tool_used):
+    def choose_tool(self, question, tool_dic, tool_used, retry_count=3):
         clean_answer = []
         ind = 0
         Tool_list = []
@@ -156,14 +160,14 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                 break
             except Exception as e:
                 print(f"choose tool fails: {e}")
-                if ind > 5:
+                if ind > retry_count:
                     return []
                 ind += 1
                 continue
         return clean_answer
 
 
-    def tool_check(self, tool_dic):
+    def tool_check(self, tool_dic, retry_count=3):
         agent = self.session.model.llm.invoke(
             model_config=self.model_config,
             prompt_messages=[
@@ -203,13 +207,13 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                     return result, False
             except Exception as e:
                 print(f"tool check fails: {e}")
-                if ind > 10:
+                if ind > retry_count:
                     return "", False
                 ind += 1
                 continue
         return result, False
 
-    def make_EASYTOOL_PROMPT(self,task_ls, tool_dic):
+    def make_EASYTOOL_PROMPT(self,task_ls, tool_dic, retry_count):
         content = """
             This is the user's question: %s
             I already think how to use tools to solve it. 
@@ -217,7 +221,8 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
             """ % self.query
         tool_used = []
         for task_dic in task_ls:
-            tool_ids = self.choose_tool(task_dic['task'], tool_used=tool_used, tool_dic=tool_dic)
+            tool_ids = self.choose_tool(task_dic['task'], tool_used=tool_used, tool_dic=tool_dic,
+                                        retry_count=retry_count)
             tool_used.extend(tool_ids)
             task_dic['tool_ids'] = tool_ids
 
@@ -294,11 +299,16 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
         tool_dic = [{'ID': idx, "Description": message.description, 'name': message.name} for idx, message in
                     enumerate(prompt_messages_tools)]
 
-        _, ai_use_tool = self.tool_check(tool_dic=tool_dic)
-        if ai_use_tool:
-            task_ls = self.planning()
-            task_ls = self.task_topology(task_ls=task_ls)
-            EASYTOOL_PROMPT = self.make_EASYTOOL_PROMPT(task_ls=task_ls, tool_dic=tool_dic)
+        maximum_easytool_retries = fc_params.maximum_easytool_retries
+        if len(prompt_messages_tools) > 0:
+            _, ai_use_tool = self.tool_check(tool_dic=tool_dic, retry_count=maximum_easytool_retries)
+            if ai_use_tool:
+                task_ls = self.planning()
+                task_ls = self.task_topology(task_ls=task_ls, retry_count=maximum_easytool_retries)
+                EASYTOOL_PROMPT = self.make_EASYTOOL_PROMPT(task_ls=task_ls, tool_dic=tool_dic,
+                                                            retry_count=maximum_easytool_retries)
+            else:
+                EASYTOOL_PROMPT = ''
         else:
             EASYTOOL_PROMPT = ''
 
@@ -384,7 +394,6 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
 
             if isinstance(chunks, Generator):
                 for chunk in chunks:
-                    # print("chunk, ", chunk)
                     # check if there is any tool call
                     if self.check_tool_calls(chunk):
                         function_call_state = True
@@ -472,9 +481,9 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                     else 0,
                 },
             )
-            assistant_message = AssistantPromptMessage(content="", tool_calls=[])
-            if not tool_calls:
-                assistant_message.content = response
+
+            if response.strip():
+                assistant_message = AssistantPromptMessage(content=response, tool_calls=[])
                 current_thoughts.append(assistant_message)
 
             final_answer += response + "\n"
@@ -653,6 +662,10 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                             name=tool_call_name,
                         )
                     )
+            # After handling all tool calls, insert a blank line so the next assistant thought
+            # appears on a new line in the user interface.
+            if tool_calls:
+                yield self.create_text_message("\n")
 
             # update prompt tool
             for prompt_tool in prompt_messages_tools:
@@ -687,7 +700,6 @@ class EnhancingFunctionAgentAgentStrategy(AgentStrategy):
                 for resp in tool_responses:
                     yield self.create_text_message(str(resp["tool_response"]))
             iteration_step += 1
-
         yield self.create_json_message(
             {
                 "execution_metadata": {

@@ -46,6 +46,9 @@
 输出{"Reason":..., "Choice":"Yes/No"}决策依据
 
 ### Changelog
+#### v0.0.2
+- 优化EASYTOOL的retry次数，默认为3次
+
 #### v0.0.1
 - Initial release.
 
