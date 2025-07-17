@@ -1,6 +1,6 @@
 ## Enhancing FunctionCalling Agent
 
-- **Author:** GraySilver
+- **Author:** allenyzx
 - **Version:** 0.0.2
 - **Type:** agent-strategy
 
@@ -47,6 +47,7 @@
 
 ### Changelog
 #### v0.0.2
+- 当不使用工具时，默认不使用EASYTOOL策略；
 - 优化EASYTOOL的retry次数，默认为3次
 
 #### v0.0.1

@@ -20,7 +20,7 @@ parameters:
       pt_BR: Model
   - name: tools
     type: array[tools]
-    required: true
+    required: false
     label:
       en_US: Tool list
       zh_Hans: 工具列表
